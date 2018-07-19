@@ -108,6 +108,36 @@ func newIDs(limit uint32) (p idPool) {
 	return
 }
 
+func writeStream(ctx context.Context, data io.ReadCloser, connToWrite *conn, t recType, reqID uint16) (err error) {
+	wc := newWriter(connToWrite, t, reqID)
+	if data != nil {
+		defer data.Close()
+		p := make([]byte, 1024)
+		var count int
+	loop:
+		for {
+			select {
+			case <-ctx.Done():
+				break loop
+			default:
+				count, err = data.Read(p)
+				if err == io.EOF {
+					err = nil
+				} else if err != nil {
+					return
+				}
+				if count == 0 {
+					break loop
+				}
+
+				_, err = wc.Write(p[:count])
+				return
+			}
+		}
+	}
+	return wc.Close()
+}
+
 // client is the default implementation of Client
 type client struct {
 	conn *conn
@@ -115,7 +145,7 @@ type client struct {
 }
 
 // writeRequest writes params and stdin to the FastCGI application
-func (c *client) writeRequest(reqID uint16, req *Request) (err error) {
+func (c *client) writeRequest(ctx context.Context, reqID uint16, req *Request) (err error) {
 
 	// end request whenever the function block ends
 	defer func() {
@@ -138,60 +168,22 @@ func (c *client) writeRequest(reqID uint16, req *Request) (err error) {
 	}
 
 	// write the stdin stream
-	stdinWriter := newWriter(c.conn, typeStdin, reqID)
-	if req.Stdin != nil {
-		defer req.Stdin.Close()
-		p := make([]byte, 1024)
-		var count int
-		for {
-			count, err = req.Stdin.Read(p)
-			if err == io.EOF {
-				err = nil
-			} else if err != nil {
-				stdinWriter.Close()
-				return
-			}
-			if count == 0 {
-				break
-			}
-
-			_, err = stdinWriter.Write(p[:count])
-			if err != nil {
-				stdinWriter.Close()
-				return
-			}
-		}
-	}
-	if err = stdinWriter.Close(); err != nil {
+	if err = writeStream(ctx, req.Stdin, c.conn, typeStdin, reqID); err != nil {
 		return
+	}
+
+	// test if the context is done
+	select {
+	case <-ctx.Done():
+		// if the context is done, simply return
+		return
+	default:
+		// do nothing
 	}
 
 	// for filter role, also add the data stream
 	if req.Role == RoleFilter {
-		// write the data stream
-		dataWriter := newWriter(c.conn, typeData, reqID)
-		defer req.Data.Close()
-		p := make([]byte, 1024)
-		var count int
-		for {
-			count, err = req.Data.Read(p)
-			if err == io.EOF {
-				err = nil
-			} else if err != nil {
-				return
-			}
-			if count == 0 {
-				break
-			}
-
-			_, err = dataWriter.Write(p[:count])
-			if err != nil {
-				return
-			}
-		}
-		if err = dataWriter.Close(); err != nil {
-			return
-		}
+		err = writeStream(ctx, req.Data, c.conn, typeData, reqID)
 	}
 	return
 }
@@ -297,7 +289,7 @@ func (c *client) Do(req *Request) (resp *ResponsePipe, err error) {
 
 	// write the request through request pipe
 	go func() {
-		if err := c.writeRequest(reqID, req); err != nil {
+		if err := c.writeRequest(ctx, reqID, req); err != nil {
 			rwError <- err
 		}
 		wg.Done()
