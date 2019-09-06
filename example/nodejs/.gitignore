@@ -1,5 +1,0 @@
-# ignore node module folder
-/node_modules
-
-# ignore socket file
-*.sock

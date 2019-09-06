@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yookoala/gofast/tools/phpfpm"
+	"github.com/slashdash/gofast/tools/phpfpm"
 )
 
 var username, basepath, pathToPhpFpm string
