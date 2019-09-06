@@ -132,6 +132,7 @@ func BasicParamsMap(inner SessionHandler) SessionHandler {
 		req.Params["REQUEST_METHOD"] = r.Method
 		req.Params["REQUEST_URI"] = r.RequestURI
 		req.Params["QUERY_STRING"] = r.URL.RawQuery
+		req.Params["HTTP_HOST"] = r.URL.Host
 
 		return inner(client, req)
 	}
