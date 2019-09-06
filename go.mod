@@ -1,4 +1,4 @@
-module github.com/yookoala/gofast
+module github.com/slashdash/gofast
 
 require (
 	github.com/go-ini/ini v1.38.1
